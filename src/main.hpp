@@ -28,7 +28,7 @@ struct App
 
     Uint32 indexCount; // how many indices to draw
 
-    SDL_Window *CreateWindow();
+    SDL_Window *CreateWindowImpl();
 
     int CreateRenderer3D();
     int Render3D();

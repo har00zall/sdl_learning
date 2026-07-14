@@ -12,7 +12,7 @@
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
     /* Create the window */
-    if (!app.CreateWindow())
+    if (!app.CreateWindowImpl())
         return SDL_APP_FAILURE;
 
     app.CreateRenderer3D();
@@ -54,7 +54,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     SDL_DestroyWindow(app.window);
 }
 
-SDL_Window *App::CreateWindow()
+SDL_Window *App::CreateWindowImpl()
 {
     app.window = SDL_CreateWindow(
         "Sandbox",
@@ -108,6 +108,8 @@ int App::CreateRenderer3D()
     pipelineInfo.vertex_shader = vertexShader;
     pipelineInfo.fragment_shader = fragmentShader;
     pipelineInfo.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    pipelineInfo.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 
     // create depth texture
     SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
@@ -118,7 +120,7 @@ int App::CreateRenderer3D()
     depthTextureCreateInfo.layer_count_or_depth = 1;
     depthTextureCreateInfo.num_levels = 1;
     depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-    SDL_GPUTexture *depthTexture = SDL_CreateGPUTexture(app.gpuDevice, &depthTextureCreateInfo);
+    app.depthTexture = SDL_CreateGPUTexture(app.gpuDevice, &depthTextureCreateInfo);
 
     pipelineInfo.depth_stencil_state.enable_depth_test = true;
     pipelineInfo.depth_stencil_state.enable_depth_write = true;
@@ -179,31 +181,40 @@ int App::CreateRenderer3D()
     // load geometry
     std::vector<Vertex> vertices;
     std::vector<Uint32> indices;
-    app.LoadGLTF("assets/cube.glb", vertices, indices);
+    if (!app.LoadGLTF("assets/cube.gltf", vertices, indices))
+    {
+        SDL_Log("Failed to load model, aborting");
+        return SDL_APP_FAILURE;
+    }
     app.indexCount = indices.size();
+    SDL_Log("Loaded %zu vertices, %zu indices", vertices.size(), indices.size());
 
     // create the vertex buffer
     SDL_GPUBufferCreateInfo vertexBufferInfo{};
     vertexBufferInfo.size = (Uint32)(vertices.size() * sizeof(Vertex));
     vertexBufferInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    SDL_Log("VertexBufferInfo has %d size", vertexBufferInfo.size);
     app.gpuVertexBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &vertexBufferInfo);
 
     // create the index buffer
     SDL_GPUBufferCreateInfo indexBufferInfo{};
     indexBufferInfo.size = (Uint32)(indices.size() * sizeof(Uint32));
     indexBufferInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
+    SDL_Log("indexBufferInfo has %d size", indexBufferInfo.size);
     app.gpuIndexBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &indexBufferInfo);
 
     // create uniform buffer
     SDL_GPUBufferCreateInfo uniformBufferInfo{};
     uniformBufferInfo.size = sizeof(CameraData);
     uniformBufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+    SDL_Log("uniformBufferInfo has %d size", uniformBufferInfo.size);
     app.gpuUniformBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &uniformBufferInfo);
 
     // create a transfer buffer to upload to the vertex buffer
     SDL_GPUTransferBufferCreateInfo transferInfo{};
     transferInfo.size = (Uint32)(vertexBufferInfo.size + indexBufferInfo.size);
     transferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    SDL_Log("transferInfo has %d size", transferInfo.size);
     SDL_GPUTransferBuffer *gpuTransferBuffer = SDL_CreateGPUTransferBuffer(app.gpuDevice, &transferInfo);
 
     // fill the transfer buffer
@@ -235,7 +246,9 @@ int App::CreateRenderer3D()
     region.offset = 0;
 
     // upload the vertex data
+    SDL_Log("[Started] Uploading vertex data to GPU");
     SDL_UploadToGPUBuffer(copyPass, &location, &region, false);
+    SDL_Log("[End] Uploaded vertex data to GPU");
 
     // update the data for index buffer
     location.offset = vertexBufferInfo.size;
@@ -243,7 +256,9 @@ int App::CreateRenderer3D()
     region.size = indexBufferInfo.size;
 
     // upload the index data
+    SDL_Log("[Started] Uploading index data to GPU");
     SDL_UploadToGPUBuffer(copyPass, &location, &region, false);
+    SDL_Log("[End] Uploaded index data to GPU");
 
     // end the copy pass
     SDL_EndGPUCopyPass(copyPass);
@@ -255,6 +270,8 @@ int App::CreateRenderer3D()
 
 int App::Render3D()
 {
+    SDL_Log("[Started] Rendering 3D");
+
     // acquire the command buffer
     SDL_GPUCommandBuffer *commandBuffer = SDL_AcquireGPUCommandBuffer(app.gpuDevice);
 
@@ -266,24 +283,29 @@ int App::Render3D()
     // end the frame early if a swapchain texture is not available
     if (swapchainTexture == NULL)
     {
+        SDL_Log("Swapchain texture is null");
         // you must always submit the command buffer
         SDL_SubmitGPUCommandBuffer(commandBuffer);
         return SDL_APP_CONTINUE;
     }
 
     // camera matrices
+    SDL_Log("[Started] Camera Setup");
     CameraData camera;
     glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 2.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
+    glm::mat4 modelMatrix = glm::scale(glm::mat4(0.5f), glm::vec3(0.5f));
 
     // converting OpenGL (glm default) axis direction into Vulkan axis direction
-    projection[1][1] *= 1;
-    camera.viewProjection = projection * view;
+    projection[1][1] *= -1;
+    camera.viewProjection = projection * view * modelMatrix;
 
     // push uniform data to buffer
     SDL_PushGPUVertexUniformData(commandBuffer, 0, &camera, sizeof(CameraData));
+    SDL_Log("[End] Camera Setup");
 
     // create the color target (now +depth)
+    SDL_Log("[Started] Render Pass Creation");
     SDL_GPUColorTargetInfo colorTargetInfo{};
     colorTargetInfo.clear_color = {0.1f, 0.1f, 0.1f, 1.0f};
     colorTargetInfo.load_op = SDL_GPU_LOADOP_CLEAR;
@@ -301,30 +323,33 @@ int App::Render3D()
 
     // begin a render pass
     SDL_GPURenderPass *renderPass = SDL_BeginGPURenderPass(commandBuffer, &colorTargetInfo, 1, &depthTargetInfo);
+    SDL_Log("[End] Render Pass Creation");
 
     // draw calls go here
+    SDL_Log("[Started] Binding Pipeline");
     SDL_BindGPUGraphicsPipeline(renderPass, app.gpuGraphicsPipeline);
 
     // binding vertex buffer
     SDL_GPUBufferBinding vertexBufferBindings[1];
     vertexBufferBindings[0].buffer = app.gpuVertexBuffer;
     vertexBufferBindings[0].offset = 0;
+    SDL_Log("[Started] Binding Pipeline");
     SDL_BindGPUVertexBuffers(renderPass, 0, vertexBufferBindings, 1);
 
     // binding index buffer
     SDL_GPUBufferBinding indexBufferBindings;
     indexBufferBindings.buffer = app.gpuIndexBuffer;
     indexBufferBindings.offset = 0;
+    SDL_Log("[Started] Binding Pipeline");
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBindings, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
     // issue a draw call
-    SDL_DrawGPUPrimitives(renderPass, app.indexCount, 1, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(renderPass, app.indexCount, 1, 0, 0, 0);
 
-    // end the render pass
-    SDL_EndGPURenderPass(renderPass);
+    SDL_EndGPURenderPass(renderPass);          // end the render pass
+    SDL_SubmitGPUCommandBuffer(commandBuffer); // submit the command buffer
 
-    // submit the command buffer
-    SDL_SubmitGPUCommandBuffer(commandBuffer);
+    SDL_Log("[End] Rendered 3D");
 
     return SDL_APP_CONTINUE;
 }
@@ -347,6 +372,11 @@ bool App::LoadGLTF(const char *filePath,
     const tinygltf::Accessor &indexAccessor = model.accessors[primitive.indices];
     const tinygltf::BufferView &indexBufferView = model.bufferViews[indexAccessor.bufferView];
     const tinygltf::Buffer &indexBuffer = model.buffers[indexBufferView.buffer];
+
+    if (indexAccessor.componentType != TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+    {
+        SDL_Log("Unexpected index component type: %d", indexAccessor.componentType);
+    }
 
     const uint16_t *indicesData =
         SDL_reinterpret_cast(const uint16_t *,
@@ -377,6 +407,8 @@ bool App::LoadGLTF(const char *filePath,
         vertex.normal = glm::vec3(normalData[i * 3 + 0], normalData[i * 3 + 1], normalData[i * 3 + 2]);
         outVertices.push_back(vertex);
     }
+
+    SDL_Log("First vertex pos: (%f, %f, %f)", outVertices[0].position.x, outVertices[0].position.y, outVertices[0].position.z);
 
     return true;
 }

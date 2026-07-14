@@ -3,7 +3,7 @@ layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 
 // Set 0, Binding 0 for our Camera Uniform Buffer
-layout(set = 0, binding = 0) uniform Camera {
+layout(set = 1, binding = 0) uniform Camera {
     mat4 viewProj;
 } cam;
 
