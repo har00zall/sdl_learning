@@ -22,6 +22,28 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 /* This function runs when a new event (mouse input, keypresses, etc) occurs. */
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
+    if (event->type == SDL_EVENT_WINDOW_RESIZED)
+    {
+        if (app.depthTexture)
+        {
+            SDL_ReleaseGPUTexture(app.gpuDevice, app.depthTexture);
+            app.depthTexture = nullptr;
+        }
+
+        // create depth texture
+        int w, h;
+        SDL_GetWindowSizeInPixels(app.window, &w, &h);
+        SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
+        depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
+        depthTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+        depthTextureCreateInfo.width = w;
+        depthTextureCreateInfo.height = h;
+        depthTextureCreateInfo.layer_count_or_depth = 1;
+        depthTextureCreateInfo.num_levels = 1;
+        depthTextureCreateInfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+        app.depthTexture = SDL_CreateGPUTexture(app.gpuDevice, &depthTextureCreateInfo);
+    }
+
     if (event->type == SDL_EVENT_KEY_DOWN ||
         event->type == SDL_EVENT_QUIT)
     {
@@ -43,6 +65,11 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
     // release buffers
     SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuVertexBuffer);
+
+    if (app.depthTexture)
+    {
+        SDL_ReleaseGPUTexture(app.gpuDevice, app.depthTexture);
+    }
 
     // release the pipeline
     SDL_ReleaseGPUGraphicsPipeline(app.gpuDevice, app.gpuGraphicsPipeline);
@@ -97,8 +124,6 @@ int App::CreateRenderer3D()
     // create GPU device
     app.gpuDevice = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, NULL);
     SDL_ClaimWindowForGPUDevice(app.gpuDevice, app.window);
-    int w, h;
-    SDL_GetWindowSizeInPixels(app.window, &w, &h);
 
     SDL_GPUShader *vertexShader = CreateShader("shaders/base.vert.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, 0, 1);
     SDL_GPUShader *fragmentShader = CreateShader("shaders/base.frag.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_FRAGMENT);
@@ -112,6 +137,8 @@ int App::CreateRenderer3D()
     pipelineInfo.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 
     // create depth texture
+    int w, h;
+    SDL_GetWindowSizeInPixels(app.window, &w, &h);
     SDL_GPUTextureCreateInfo depthTextureCreateInfo{};
     depthTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
     depthTextureCreateInfo.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
