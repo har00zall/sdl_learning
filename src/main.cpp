@@ -44,8 +44,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         app.depthTexture = SDL_CreateGPUTexture(app.gpuDevice, &depthTextureCreateInfo);
     }
 
-    if (event->type == SDL_EVENT_KEY_DOWN ||
-        event->type == SDL_EVENT_QUIT)
+    if (event->type == SDL_EVENT_QUIT)
     {
         return SDL_APP_SUCCESS; /* end the program, reporting success to the OS. */
     }
