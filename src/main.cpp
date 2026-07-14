@@ -181,7 +181,7 @@ int App::CreateRenderer3D()
     // load geometry
     std::vector<Vertex> vertices;
     std::vector<Uint32> indices;
-    if (!app.LoadGLTF("assets/cube.gltf", vertices, indices))
+    if (!app.LoadGLTF("assets/monkey.gltf", vertices, indices))
     {
         SDL_Log("Failed to load model, aborting");
         return SDL_APP_FAILURE;
@@ -297,7 +297,7 @@ int App::Render3D()
     glm::mat4 modelMatrix = glm::scale(glm::mat4(0.5f), glm::vec3(0.5f));
 
     // converting OpenGL (glm default) axis direction into Vulkan axis direction
-    projection[1][1] *= -1;
+    projection[1][1] *= 1;
     camera.viewProjection = projection * view * modelMatrix;
 
     // push uniform data to buffer
