@@ -2,12 +2,17 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#define INSTANCES 10000
+#define INSTANCES 100
 
 struct StorageBufferObject
 {
     glm::mat4 viewProjection;
     glm::mat4 model[INSTANCES];
+};
+
+struct FragmentUniformBufferData
+{
+    glm::vec3 viewPosition;
 };
 
 struct Transform
@@ -22,7 +27,7 @@ struct Transform
 struct CameraObject
 {
     float orbitAngle = 0.f;
-    float orbitSpeed = 0.05f;
+    float orbitSpeed = 0.01f;
 };
 
 struct Vertex
@@ -69,7 +74,7 @@ struct App
 static App app{};
 static CameraObject cameraObject{};
 
-void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix);
+void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix, glm::vec3 &cameraPosition);
 void LoadMesh(const char *filePath, Mesh &outMesh);
 
 bool LoadGLTF(const char *filePath,

@@ -109,13 +109,13 @@ SDL_Window *App::CreateWindowImpl()
     return app.window;
 }
 
-void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix)
+void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix, glm::vec3 &cameraPosition)
 {
     cameraObject.orbitAngle += cameraObject.orbitSpeed * deltaTime;
 
     float radius = 10.0f;
     glm::vec3 targetPosition(0, 0, 0);
-    glm::vec3 cameraPosition(
+    cameraPosition = glm::vec3(
         targetPosition.x + radius * cos(cameraObject.orbitAngle),
         targetPosition.y + 5.0f,
         targetPosition.z + radius * sin(cameraObject.orbitAngle));
@@ -249,7 +249,7 @@ int App::CreateRenderer3D()
     SDL_ClaimWindowForGPUDevice(app.gpuDevice, app.window);
 
     SDL_GPUShader *vertexShader = CreateShader("shaders/base.vert.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, 0, 0);
-    SDL_GPUShader *fragmentShader = CreateShader("shaders/base.frag.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_FRAGMENT);
+    SDL_GPUShader *fragmentShader = CreateShader("shaders/base.frag.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 0, 0, 1);
 
     // create the graphics pipeline
     SDL_GPUGraphicsPipelineCreateInfo pipelineInfo{};
@@ -437,12 +437,18 @@ int App::Render3D()
 
     // camera matrices
     SDL_Log("[Started] Camera Setup");
-    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 2.0f, 8.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::vec3 cameraPosition = glm::vec3(0.0f, 2.0f, 8.0f);
+    glm::mat4 view = glm::lookAt(cameraPosition, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)width / (float)height, 0.1f, 100.0f);
 
     // converting OpenGL (glm default) axis direction into Vulkan axis direction
     projection[1][1] *= 1;
-    OrbitCamera(0.14f, view);
+    OrbitCamera(0.14f, view, cameraPosition);
+    SDL_Log("Camera Position: %f, %f, %f", cameraPosition.x, cameraPosition.y, cameraPosition.z);
+    FragmentUniformBufferData fragmentUniformBufferData{};
+    fragmentUniformBufferData.viewPosition = cameraPosition;
+    SDL_PushGPUFragmentUniformData(commandBuffer, 0, &fragmentUniformBufferData, sizeof(FragmentUniformBufferData));
+
     app.storageBufferObject.viewProjection = projection * view;
     SDL_Log("[End] Camera Setup");
     // push objects uniform data to buffer
@@ -450,14 +456,14 @@ int App::Render3D()
 
     // object matrices
     SDL_Log("[Starting] Creating storage buffer");
-    float startingX = -50, startingZ = -50;
+    float startingX = -15, startingZ = -15;
     int objectCount = 0;
     for (int x = 0; x < glm::sqrt(INSTANCES); x++)
     {
         for (int z = 0; z < glm::sqrt(INSTANCES); z++)
         {
             glm::mat4 objectModel = glm::mat4(1.0f);
-            glm::vec3 objectPosition = glm::vec3(startingX + x * 2.f, 0.0f, startingZ + z * 2.f);
+            glm::vec3 objectPosition = glm::vec3(startingX + x * 3.f, 0.0f, startingZ + z * 3.f);
             glm::vec3 objectRotation = glm::vec3(0);
             glm::vec3 objectScale = glm::vec3(1.0f);
 
