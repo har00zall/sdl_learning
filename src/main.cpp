@@ -64,6 +64,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
     // release buffers
     SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuVertexBuffer);
+    SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuIndexBuffer);
+    SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuUniformBuffer);
 
     if (app.depthTexture)
     {
