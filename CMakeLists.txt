@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
+set(SHADER_COMPILED_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>/shaders")
 
 include(FetchContent)
 
@@ -30,3 +31,42 @@ FetchContent_MakeAvailable(SDL3 glm tinygltf)
 add_executable(${PROJECT_NAME} WIN32 src/main.cpp)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE SDL3::SDL3 glm tinygltf)
+
+# Shader compilation
+# Find glslc compiler (part of Vulkan SDK)
+find_program(GLSL_VALIDATOR glslc HINTS ${Vulkan_GLSLC_EXECUTABLE} /usr/bin /usr/local/bin ${VULKAN_SDK}/Bin ${VULKAN_SDK_PATH}/Bin32)
+
+if(NOT GLSL_VALIDATOR)
+    message(FATAL_ERROR "glslc not found! Make sure Vulkan SDK is installed and glslc is in PATH")
+endif()
+
+# Create shaders output directory
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/shaders)
+
+# Function to compile shaders
+function(add_shader TARGET SHADER SHADER_TYPE)
+    # Get shader name without extension
+    get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
+    get_filename_component(SHADER_EXT ${SHADER} EXT)
+
+    # Remove the dot from extension for output naming
+    string(SUBSTRING ${SHADER_EXT} 1 -1 SHADER_EXT_NO_DOT)
+
+    # Set output file path
+    set(SHADER_OUTPUT ${SHADER_COMPILED_OUTPUT_DIRECTORY}/${SHADER_NAME}.${SHADER_EXT_NO_DOT}.spv)
+
+    # Add custom command to compile shader
+    add_custom_command(
+        OUTPUT ${SHADER_OUTPUT}
+        COMMAND ${GLSL_VALIDATOR} -fshader-stage=${SHADER_TYPE} ${CMAKE_SOURCE_DIR}/shaders/${SHADER} -o ${SHADER_OUTPUT}
+        DEPENDS ${CMAKE_SOURCE_DIR}/shaders/${SHADER}
+        COMMENT "Compiling shader ${SHADER} to SPIR-V"
+    )
+
+    # Add the compiled shader as a dependency of the target
+    target_sources(${TARGET} PRIVATE ${SHADER_OUTPUT})
+endfunction()
+
+# Compile shaders
+add_shader(${PROJECT_NAME} base.vert vertex)
+add_shader(${PROJECT_NAME} base.frag fragment)
