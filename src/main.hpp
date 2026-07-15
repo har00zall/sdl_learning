@@ -2,12 +2,12 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#define INSTANCES 100
+#define INSTANCES 10000
 
-struct UniformBufferObject
+struct StorageBufferObject
 {
     glm::mat4 viewProjection;
-    glm::mat4 model[100];
+    glm::mat4 model[INSTANCES];
 };
 
 struct Transform
@@ -19,7 +19,7 @@ struct Transform
     glm::mat4 GetModelMatrix();
 };
 
-struct CameraObject 
+struct CameraObject
 {
     float orbitAngle = 0.f;
     float orbitSpeed = 0.05f;
@@ -31,7 +31,7 @@ struct Vertex
     glm::vec3 normal;
 };
 
-struct Mesh 
+struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<Uint32> indices;
@@ -47,9 +47,11 @@ struct App
     SDL_GPUBufferCreateInfo gpuVertexBufferInfo;
     SDL_GPUBuffer *gpuVertexBuffer;
     SDL_GPUBufferCreateInfo gpuIndexBufferInfo;
-    SDL_GPUBuffer *gpuIndexBuffer;   // gltf indices
-    SDL_GPUBufferCreateInfo gpuUniformBufferInfo;
-    SDL_GPUBuffer *gpuUniformBuffer; // camera matrix
+    SDL_GPUBuffer *gpuIndexBuffer;
+    SDL_GPUBufferCreateInfo gpuStorageBufferInfo;
+    SDL_GPUBuffer *gpuStorageBuffer;
+    SDL_GPUTransferBufferCreateInfo gpuStorageTransferBufferInfo;
+    SDL_GPUTransferBuffer *gpuStorageTransferBuffer;
 
     SDL_GPUTexture *depthTexture; // z-buffer
 
@@ -57,7 +59,7 @@ struct App
 
     SDL_Window *CreateWindowImpl();
 
-    UniformBufferObject uniformBufferObject;
+    StorageBufferObject storageBufferObject;
     Mesh mesh;
 
     int CreateRenderer3D();
@@ -71,10 +73,8 @@ void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix);
 void LoadMesh(const char *filePath, Mesh &outMesh);
 
 bool LoadGLTF(const char *filePath,
-                  std::vector<Vertex> &outVertices, std::vector<Uint32> &outIndices);
+              std::vector<Vertex> &outVertices, std::vector<Uint32> &outIndices);
 
 SDL_GPUShader *CreateShader(char *shaderFilePath,
                             SDL_GPUShaderFormat shaderFormat, SDL_GPUShaderStage shaderStage,
-                            int num_sampler = 0, int num_storage_buffers = 0, int num_storage_textures = 0, int num_uniform_buffers = 0);
-
-
+                            Uint32 num_sampler = 0, Uint32 num_storage_buffers = 0, Uint32 num_storage_textures = 0, Uint32 num_uniform_buffers = 0);

@@ -4,13 +4,13 @@ layout(location = 1) in vec3 inNormal;
 
 layout(location = 0) out vec3 fragNormal;
 
-layout(set = 1, binding = 0) uniform UniformBufferObject {
+layout(std430, set = 0, binding = 0) readonly buffer StorageBufferObject {
     mat4 viewProjection;
-    mat4 model[100];
-} uniformBufferObject;
+    mat4 model[];
+} storageBufferObject;
 
 void main() {
-    gl_Position = uniformBufferObject.viewProjection *  uniformBufferObject.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
+    gl_Position = storageBufferObject.viewProjection *  storageBufferObject.model[gl_InstanceIndex] * vec4(inPosition, 1.0);
 
     fragNormal = inNormal;
 }

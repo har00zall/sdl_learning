@@ -65,7 +65,8 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     // release buffers
     SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuVertexBuffer);
     SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuIndexBuffer);
-    SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuUniformBuffer);
+    SDL_ReleaseGPUBuffer(app.gpuDevice, app.gpuStorageBuffer);
+    SDL_ReleaseGPUTransferBuffer(app.gpuDevice, app.gpuStorageTransferBuffer);
 
     if (app.depthTexture)
     {
@@ -114,17 +115,15 @@ void OrbitCamera(float deltaTime, glm::mat4 &viewMatrix)
 
     float radius = 10.0f;
     glm::vec3 targetPosition(0, 0, 0);
-    glm::vec3 cameraPosition(  
+    glm::vec3 cameraPosition(
         targetPosition.x + radius * cos(cameraObject.orbitAngle),
         targetPosition.y + 5.0f,
-        targetPosition.z + radius * sin(cameraObject.orbitAngle)
-    );
+        targetPosition.z + radius * sin(cameraObject.orbitAngle));
 
     viewMatrix = glm::lookAt(
         cameraPosition,
         targetPosition,
-        glm::vec3(0.f, 1.f, 0.f)
-    );
+        glm::vec3(0.f, 1.f, 0.f));
 }
 
 void LoadMesh(const char *filePath, Mesh &outMesh)
@@ -136,13 +135,13 @@ void LoadMesh(const char *filePath, Mesh &outMesh)
         SDL_Log("Failed to load model, aborting");
         return;
     }
-    
+
     SDL_Log("Loaded %zu vertices, %zu indices", vertices.size(), indices.size());
-    
+
     // create the vertex buffer
     app.gpuVertexBufferInfo.size += (Uint32)(vertices.size() * sizeof(Vertex));
     SDL_Log("Updated VertexBufferInfo has %d size", app.gpuVertexBufferInfo.size);
-    
+
     // create the index buffer
     app.gpuIndexBufferInfo.size += (Uint32)(indices.size() * sizeof(Uint32));
     SDL_Log("Updated indexBufferInfo has %d size", app.gpuIndexBufferInfo.size);
@@ -152,7 +151,7 @@ void LoadMesh(const char *filePath, Mesh &outMesh)
 }
 
 bool LoadGLTF(const char *filePath,
-                   std::vector<Vertex> &outVertices, std::vector<Uint32> &outIndices)
+              std::vector<Vertex> &outVertices, std::vector<Uint32> &outIndices)
 {
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -211,10 +210,15 @@ bool LoadGLTF(const char *filePath,
 }
 
 SDL_GPUShader *CreateShader(const char *shaderFilePath, SDL_GPUShaderFormat shaderFormat, SDL_GPUShaderStage shaderStage,
-                            int num_sampler = 0, int num_storage_buffers = 0, int num_storage_textures = 0, int num_uniform_buffers = 0)
+                            Uint32 num_sampler = 0, Uint32 num_storage_buffers = 0, Uint32 num_storage_textures = 0, Uint32 num_uniform_buffers = 0)
 {
     size_t shaderCodeSize;
     void *shaderCode = SDL_LoadFile(shaderFilePath, &shaderCodeSize);
+    if (!shaderCode)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Load Shader Error: %s", SDL_GetError());
+    }
+
     SDL_GPUShaderCreateInfo shaderCreateInfo{};
     shaderCreateInfo.code = (Uint8 *)shaderCode;
     shaderCreateInfo.code_size = shaderCodeSize;
@@ -227,6 +231,12 @@ SDL_GPUShader *CreateShader(const char *shaderFilePath, SDL_GPUShaderFormat shad
     shaderCreateInfo.stage = shaderStage;
 
     SDL_GPUShader *shader = SDL_CreateGPUShader(app.gpuDevice, &shaderCreateInfo);
+
+    if (!shader)
+    {
+        SDL_LogError(SDL_LOG_CATEGORY_ERROR, "Creating Shader Error: %s", SDL_GetError());
+    }
+
     SDL_free(shaderCode);
 
     return shader;
@@ -238,7 +248,7 @@ int App::CreateRenderer3D()
     app.gpuDevice = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, true, NULL);
     SDL_ClaimWindowForGPUDevice(app.gpuDevice, app.window);
 
-    SDL_GPUShader *vertexShader = CreateShader("shaders/base.vert.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_VERTEX, 0, 0, 0, 1);
+    SDL_GPUShader *vertexShader = CreateShader("shaders/base.vert.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_VERTEX, 0, 1, 0, 0);
     SDL_GPUShader *fragmentShader = CreateShader("shaders/base.frag.spv", SDL_GPU_SHADERFORMAT_SPIRV, SDL_GPU_SHADERSTAGE_FRAGMENT);
 
     // create the graphics pipeline
@@ -322,24 +332,23 @@ int App::CreateRenderer3D()
     app.gpuVertexBufferInfo.size = 0;
     app.gpuVertexBufferInfo.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     SDL_Log("VertexBufferInfo has %d size", app.gpuVertexBufferInfo.size);
-    
+
     // create the index buffer
     app.gpuIndexBufferInfo.size = 0;
     app.gpuIndexBufferInfo.usage = SDL_GPU_BUFFERUSAGE_INDEX;
     SDL_Log("indexBufferInfo has %d size", app.gpuIndexBufferInfo.size);
-    
+
     // load geometry
-    LoadMesh("assets/monkey.gltd", app.mesh);
+    LoadMesh("assets/monkey.gltf", app.mesh);
     app.gpuVertexBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &app.gpuVertexBufferInfo);
     app.gpuIndexBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &app.gpuIndexBufferInfo);
-    
+
     // create uniform buffer
 
-    app.gpuUniformBufferInfo.size = sizeof(UniformBufferObject);
-    app.gpuUniformBufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
-    SDL_Log("uniformBufferInfo has %d size", app.gpuUniformBufferInfo.size);
-    app.gpuUniformBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &app.gpuUniformBufferInfo);
-    
+    app.gpuStorageBufferInfo.size = sizeof(StorageBufferObject);
+    app.gpuStorageBufferInfo.usage = SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
+    SDL_Log("gpuStorageBufferInfo has %d size", app.gpuStorageBufferInfo.size);
+    app.gpuStorageBuffer = SDL_CreateGPUBuffer(app.gpuDevice, &app.gpuStorageBufferInfo);
 
     // create a transfer buffer to upload to the vertex buffer
     SDL_GPUTransferBufferCreateInfo transferInfo{};
@@ -389,12 +398,18 @@ int App::CreateRenderer3D()
     // upload the index data
     SDL_Log("[Started] Uploading index data to GPU");
     SDL_UploadToGPUBuffer(copyPass, &location, &region, false);
-    SDL_Log("[End] Uploaded index data to GPU");
 
     // end the copy pass
     SDL_EndGPUCopyPass(copyPass);
+    SDL_Log("[End] Uploaded index data to GPU");
     SDL_SubmitGPUCommandBuffer(commandBuffer);
     SDL_ReleaseGPUTransferBuffer(app.gpuDevice, gpuTransferBuffer);
+
+    SDL_Log("[Starting] Creating Transfer buffer");
+    app.gpuStorageTransferBufferInfo.size = (Uint32)sizeof(StorageBufferObject);
+    app.gpuStorageTransferBufferInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    app.gpuStorageTransferBuffer = SDL_CreateGPUTransferBuffer(app.gpuDevice, &app.gpuStorageTransferBufferInfo);
+    SDL_Log("[End] Creating Transfer buffer");
 
     return SDL_APP_CONTINUE;
 }
@@ -428,17 +443,18 @@ int App::Render3D()
     // converting OpenGL (glm default) axis direction into Vulkan axis direction
     projection[1][1] *= 1;
     OrbitCamera(0.14f, view);
-    app.uniformBufferObject.viewProjection = projection * view;
+    app.storageBufferObject.viewProjection = projection * view;
     SDL_Log("[End] Camera Setup");
     // push objects uniform data to buffer
     // SDL_PushGPUVertexUniformData(commandBuffer, 0, &app.uniformBufferObject, sizeof(glm::mat4));
 
     // object matrices
-    float startingX = 0, startingZ = 0;
+    SDL_Log("[Starting] Creating storage buffer");
+    float startingX = -50, startingZ = -50;
     int objectCount = 0;
-    for (int x = 0; x < 10; x++)
+    for (int x = 0; x < glm::sqrt(INSTANCES); x++)
     {
-        for (int z = 0; z < 10; z++)
+        for (int z = 0; z < glm::sqrt(INSTANCES); z++)
         {
             glm::mat4 objectModel = glm::mat4(1.0f);
             glm::vec3 objectPosition = glm::vec3(startingX + x * 2.f, 0.0f, startingZ + z * 2.f);
@@ -451,11 +467,30 @@ int App::Render3D()
             objectModel = glm::rotate(objectModel, glm::radians(objectRotation.z), glm::vec3(0.0f, 0.f, 1.0f));
             objectModel = glm::scale(objectModel, objectScale);
 
-            app.uniformBufferObject.model[objectCount + 1] = objectModel;
+            app.storageBufferObject.model[objectCount] = objectModel;
             objectCount++;
         }
     }
-    SDL_PushGPUVertexUniformData(commandBuffer, 0, &app.uniformBufferObject, sizeof(UniformBufferObject));
+    // SDL_PushGPUVertexUniformData(commandBuffer, 0, &app.uniformBufferObject, sizeof(UniformBufferObject));
+    // upload storage buffer to the GPU
+    Uint8 *storageDataMapping = (Uint8 *)SDL_MapGPUTransferBuffer(app.gpuDevice, app.gpuStorageTransferBuffer, false);
+    SDL_memcpy(storageDataMapping, &app.storageBufferObject, app.gpuStorageTransferBufferInfo.size);
+    SDL_UnmapGPUTransferBuffer(app.gpuDevice, app.gpuStorageTransferBuffer);
+
+    SDL_GPUCopyPass *storageCopyPass = SDL_BeginGPUCopyPass(commandBuffer);
+
+    SDL_GPUTransferBufferLocation storageTransferLocation{};
+    storageTransferLocation.transfer_buffer = app.gpuStorageTransferBuffer;
+    storageTransferLocation.offset = 0;
+
+    SDL_GPUBufferRegion storageTransferRegion{};
+    storageTransferRegion.buffer = app.gpuStorageBuffer;
+    storageTransferRegion.size = app.gpuStorageTransferBufferInfo.size;
+    storageTransferRegion.offset = 0;
+
+    SDL_UploadToGPUBuffer(storageCopyPass, &storageTransferLocation, &storageTransferRegion, false);
+    SDL_EndGPUCopyPass(storageCopyPass);
+    SDL_Log("[Ended] Creating storage buffer");
 
     // create the color target (now +depth)
     SDL_Log("[Started] Render Pass Creation");
@@ -486,15 +521,20 @@ int App::Render3D()
     SDL_GPUBufferBinding vertexBufferBindings[1];
     vertexBufferBindings[0].buffer = app.gpuVertexBuffer;
     vertexBufferBindings[0].offset = 0;
-    SDL_Log("[Started] Binding Pipeline");
+    SDL_Log("[Started] Binding Vertex Buffer");
     SDL_BindGPUVertexBuffers(renderPass, 0, vertexBufferBindings, 1);
 
     // binding index buffer
     SDL_GPUBufferBinding indexBufferBindings;
     indexBufferBindings.buffer = app.gpuIndexBuffer;
     indexBufferBindings.offset = 0;
-    SDL_Log("[Started] Binding Pipeline");
+    SDL_Log("[Started] Binding Index Buffer");
     SDL_BindGPUIndexBuffer(renderPass, &indexBufferBindings, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    // binding Storage Buffer
+    SDL_Log("[Started] Binding Vertex Storage Buffer");
+    SDL_BindGPUVertexStorageBuffers(renderPass, 0, &app.gpuStorageBuffer, 1);
+    SDL_Log("[End] Binding Vertex Storage Buffer");
 
     // issue a draw call
     // SDL_DrawGPUIndexedPrimitives(renderPass, app.indexCount, 1, 0, 0, 0);
